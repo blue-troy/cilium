@@ -36,6 +36,7 @@ import (
 	nodeaddressing "github.com/cilium/cilium/pkg/node/addressing"
 	nodeTypes "github.com/cilium/cilium/pkg/node/types"
 	"github.com/cilium/cilium/pkg/option"
+	"github.com/cilium/cilium/pkg/testutils"
 
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/vishvananda/netlink"
@@ -1014,7 +1015,7 @@ func (s *linuxPrivilegedIPv4OnlyTestSuite) TestArpPingHandling(c *check.C) {
 	dpConfig := DatapathConfiguration{HostDevice: "veth0"}
 	prevARPPeriod := option.Config.ARPPingRefreshPeriod
 	defer func() { option.Config.ARPPingRefreshPeriod = prevARPPeriod }()
-	option.Config.ARPPingRefreshPeriod = time.Duration(10 * time.Millisecond)
+	option.Config.ARPPingRefreshPeriod = time.Duration(1 * time.Nanosecond)
 
 	linuxNodeHandler := NewNodeHandler(dpConfig, s.nodeAddressing, nil).(*linuxNodeHandler)
 	c.Assert(linuxNodeHandler, check.Not(check.IsNil))
@@ -1026,18 +1027,41 @@ func (s *linuxPrivilegedIPv4OnlyTestSuite) TestArpPingHandling(c *check.C) {
 	})
 	c.Assert(err, check.IsNil)
 
+	wait := func(now time.Time, nodeID nodeTypes.Identity, isDelete bool) {
+		err := testutils.WaitUntil(func() bool {
+			linuxNodeHandler.neighLock.Lock()
+			defer linuxNodeHandler.neighLock.Unlock()
+			nextHop, found := linuxNodeHandler.neighNextHopByNode[nodeID]
+			if !found {
+				return isDelete
+			}
+			lastPing, found := linuxNodeHandler.neighLastPingByNextHop[nextHop]
+			if !found {
+				return isDelete
+			}
+			if isDelete {
+				return false
+			}
+			return now.Before(lastPing)
+		}, 5*time.Second)
+		c.Assert(err, check.IsNil)
+	}
+
 	nodev1 := nodeTypes.Node{
 		Name:        "node1",
 		IPAddresses: []nodeTypes.Address{{nodeaddressing.NodeInternalIP, ip1}},
 	}
+	now := time.Now()
 	err = linuxNodeHandler.NodeAdd(nodev1)
 	c.Assert(err, check.IsNil)
+	// insertNeighbor is invoked async
 	// Insert the same node second time. This should not increment refcount for
 	// the same nextHop. We test it by checking that NodeDelete has removed the
 	// related neigh entry.
 	err = linuxNodeHandler.NodeAdd(nodev1)
 	c.Assert(err, check.IsNil)
-	time.Sleep(100 * time.Millisecond) // insertNeighbor is invoked async
+	// insertNeighbor is invoked async
+	wait(now, nodev1.Identity(), false)
 
 	// Check whether an arp entry for nodev1 IP addr (=veth1) was added
 	neighs, err := netlink.NeighList(veth0.Attrs().Index, netlink.FAMILY_V4)
@@ -1064,10 +1088,12 @@ func (s *linuxPrivilegedIPv4OnlyTestSuite) TestArpPingHandling(c *check.C) {
 		return nil
 	})
 
+	now = time.Now()
 	err = netlink.LinkSetHardwareAddr(veth0, veth1HwAddr)
 	c.Assert(err, check.IsNil)
 
 	linuxNodeHandler.NodeNeighborRefresh(context.TODO(), nodev1)
+	wait(now, nodev1.Identity(), false)
 	neighs, err = netlink.NeighList(veth0.Attrs().Index, netlink.FAMILY_V4)
 	c.Assert(err, check.IsNil)
 	found = false
@@ -1082,9 +1108,11 @@ func (s *linuxPrivilegedIPv4OnlyTestSuite) TestArpPingHandling(c *check.C) {
 	c.Assert(updatedHwAddrFromArpEntry.String(), check.Equals, veth0HwAddr.String())
 
 	// Remove nodev1, and check whether the arp entry was removed
+	now = time.Now()
 	err = linuxNodeHandler.NodeDelete(nodev1)
 	c.Assert(err, check.IsNil)
-	time.Sleep(100 * time.Millisecond) // deleteNeighbor is invoked async
+	// deleteNeighbor is invoked async
+	wait(now, nodev1.Identity(), true)
 
 	neighs, err = netlink.NeighList(veth0.Attrs().Index, netlink.FAMILY_V4)
 	c.Assert(err, check.IsNil)
@@ -1100,9 +1128,10 @@ func (s *linuxPrivilegedIPv4OnlyTestSuite) TestArpPingHandling(c *check.C) {
 	// Create multiple goroutines which call insertNeighbor and check whether
 	// MAC changes of veth1 are properly handled. This is a basic randomized
 	// testing of insertNeighbor() fine-grained locking.
+	now = time.Now()
 	err = linuxNodeHandler.NodeAdd(nodev1)
 	c.Assert(err, check.IsNil)
-	time.Sleep(100 * time.Millisecond)
+	wait(now, nodev1.Identity(), false)
 
 	rndHWAddr := func() net.HardwareAddr {
 		mac := make([]byte, 6)
@@ -1173,9 +1202,11 @@ func (s *linuxPrivilegedIPv4OnlyTestSuite) TestArpPingHandling(c *check.C) {
 	// Cleanup
 	close(done)
 	wg.Wait()
+	now = time.Now()
 	err = linuxNodeHandler.NodeDelete(nodev1)
 	c.Assert(err, check.IsNil)
-	time.Sleep(100 * time.Millisecond) // deleteNeighbor is invoked async
+	// deleteNeighbor is invoked async
+	wait(now, nodev1.Identity(), true)
 
 	// Setup routine for the 2. test
 	setupRemoteNode := func(vethName, vethPeerName, netnsName, vethCIDR, vethIPAddr,
@@ -1320,7 +1351,10 @@ func (s *linuxPrivilegedIPv4OnlyTestSuite) TestArpPingHandling(c *check.C) {
 		Name:        "node2",
 		IPAddresses: []nodeTypes.Address{{nodeaddressing.NodeInternalIP, node2IP}},
 	}
+	now = time.Now()
 	c.Assert(linuxNodeHandler.NodeAdd(nodev2), check.IsNil)
+	// insertNeighbor is invoked async
+	wait(now, nodev2.Identity(), false)
 
 	node3IP := net.ParseIP("7.7.7.250")
 	nodev3 := nodeTypes.Node{
@@ -1328,7 +1362,8 @@ func (s *linuxPrivilegedIPv4OnlyTestSuite) TestArpPingHandling(c *check.C) {
 		IPAddresses: []nodeTypes.Address{{nodeaddressing.NodeInternalIP, node3IP}},
 	}
 	c.Assert(linuxNodeHandler.NodeAdd(nodev3), check.IsNil)
-	time.Sleep(100 * time.Millisecond) // insertNeighbor is invoked async
+	// insertNeighbor is invoked async
+	wait(now, nodev3.Identity(), false)
 
 	nextHop := net.ParseIP("9.9.9.250")
 	// Check that both node{2,3} are via nextHop (gw)
@@ -1345,7 +1380,9 @@ func (s *linuxPrivilegedIPv4OnlyTestSuite) TestArpPingHandling(c *check.C) {
 	c.Assert(found, check.Equals, true)
 
 	// Check that removing node2 will not remove nextHop, as it is still used by node3
+	now = time.Now()
 	c.Assert(linuxNodeHandler.NodeDelete(nodev2), check.IsNil)
+	wait(now, nodev2.Identity(), true)
 	neighs, err = netlink.NeighList(veth0.Attrs().Index, netlink.FAMILY_V4)
 	found = false
 	for _, n := range neighs {
@@ -1357,8 +1394,10 @@ func (s *linuxPrivilegedIPv4OnlyTestSuite) TestArpPingHandling(c *check.C) {
 	c.Assert(found, check.Equals, true)
 
 	// However, removing node3 should remove the neigh entry for nextHop
+	now = time.Now()
 	c.Assert(linuxNodeHandler.NodeDelete(nodev3), check.IsNil)
-	time.Sleep(100 * time.Millisecond) // deleteNeighbor is invoked async
+	// deleteNeighbor is invoked async
+	wait(now, nodev3.Identity(), true)
 
 	found = false
 	neighs, err = netlink.NeighList(veth0.Attrs().Index, netlink.FAMILY_V4)
