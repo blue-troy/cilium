@@ -38,6 +38,7 @@ func (f *GenericVethChainer) ImplementsAdd() bool {
 }
 
 func (f *GenericVethChainer) Add(ctx context.Context, pluginCtx chainingapi.PluginContext) (res *cniTypesVer.Result, err error) {
+	pluginCtx.Logger.Debugln("into GenericVethChainer add")
 	err = cniVersion.ParsePrevResult(&pluginCtx.NetConf.NetConf)
 	if err != nil {
 		err = fmt.Errorf("unable to understand network config: %s", err)
