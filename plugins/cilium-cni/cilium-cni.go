@@ -21,6 +21,7 @@ import (
 	"os"
 	"runtime"
 	"sort"
+	"time"
 
 	"github.com/cilium/cilium/api/v1/models"
 	"github.com/cilium/cilium/pkg/addressing"
@@ -271,6 +272,12 @@ func cmdAdd(args *skel.CmdArgs) (err error) {
 		netNs    ns.NetNS
 	)
 	logger := log.WithField("eventUUID", uuid.NewUUID())
+
+	logger.Debugf("cmd add")
+	logger.Debugf("start 1 min sleep")
+	time.Sleep(time.Minute)
+	logger.Debugf("end 1 min sleep")
+
 
 	n, err = types.LoadNetConf(args.StdinData)
 	if err != nil {
