@@ -271,7 +271,7 @@ func cmdAdd(args *skel.CmdArgs) (err error) {
 		netNs    ns.NetNS
 	)
 	logger := log.WithField("eventUUID", uuid.NewUUID())
-
+	logger.Debugln("start cilium-cni add")
 	n, err = types.LoadNetConf(args.StdinData)
 	if err != nil {
 		// In case of an error is helpful to always print the processing CNI
@@ -280,6 +280,8 @@ func cmdAdd(args *skel.CmdArgs) (err error) {
 		err = fmt.Errorf("unable to parse CNI configuration \"%s\": %s", args.StdinData, err)
 		return
 	}
+
+	logger.Debugf("setting log level")
 	if !n.EnableDebug {
 		logger.Logger.SetLevel(logrus.InfoLevel)
 	} else {
