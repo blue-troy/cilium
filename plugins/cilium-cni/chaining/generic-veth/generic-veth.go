@@ -174,13 +174,13 @@ func (f *GenericVethChainer) Add(ctx context.Context, pluginCtx chainingapi.Plug
 		},
 	}
 
-	err = pluginCtx.Client.EndpointCreate(ep)
+	/*err = pluginCtx.Client.EndpointCreate(ep)
 	if err != nil {
 		pluginCtx.Logger.WithError(err).WithFields(logrus.Fields{
 			logfields.ContainerID: ep.ContainerID}).Warn("Unable to create endpoint")
 		err = fmt.Errorf("unable to create endpoint: %s", err)
 		return
-	}
+	}*/
 
 	pluginCtx.Logger.WithFields(logrus.Fields{
 		logfields.ContainerID: ep.ContainerID}).Debug("Endpoint successfully created")
