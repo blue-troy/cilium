@@ -176,6 +176,7 @@ func (f *GenericVethChainer) Add(ctx context.Context, pluginCtx chainingapi.Plug
 		},
 	}
 
+	pluginCtx.Logger.Debugf("endpoint info :%+v",ep)
 	err = pluginCtx.Client.EndpointCreate(ep)
 	if err != nil {
 		pluginCtx.Logger.WithError(err).WithFields(logrus.Fields{
