@@ -171,8 +171,6 @@ func (f *GenericVethChainer) Add(ctx context.Context, pluginCtx chainingapi.Plug
 
 			// All routing is performed by the Linux stack
 			RequireRouting: &disabled,
-
-			InstallEndpointRoute: true,
 		},
 	}
 
