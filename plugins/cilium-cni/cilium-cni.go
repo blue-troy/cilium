@@ -283,14 +283,18 @@ func cmdAdd(args *skel.CmdArgs) (err error) {
 
 	logger.Debugf("setting log level")
 	if !n.EnableDebug {
+		logger.Debugf("setting log info level")
 		logger.Logger.SetLevel(logrus.InfoLevel)
 	} else {
+		logger.Debugf("try gops listen")
 		if err := gops.Listen(gops.Options{}); err != nil {
 			log.WithError(err).Warn("Unable to start gops")
 		} else {
+			logger.Debugf("defer gops.Close()")
 			defer gops.Close()
 		}
 	}
+	logger.Debugf("Processing CNI ADD request")
 	logger.Debugf("Processing CNI ADD request %#v", args)
 
 	logger.Debugf("CNI NetConf: %#v", n)
